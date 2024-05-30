@@ -34,55 +34,47 @@ with
         left join customers on orders.user_id = customers.id
     ),
 
-    customer_orders as (
-        select
-            customers.id as customer_id,
-            min(orders.order_date) as first_order_date,
-            max(orders.order_date) as most_recent_order_date,
-            count(orders.id) as number_of_orders
-        from customers
-        left join orders on customers.id = orders.user_id
-        group by 1
-    ),
-
     final as (
         select
-            paid_orders.order_id,
-            paid_orders.customer_id,
-            paid_orders.order_placed_at,
-            paid_orders.order_status,
-            paid_orders.total_amount_paid,
-            paid_orders.payment_finalized_date,
-            paid_orders.customer_first_name,
-            paid_orders.customer_last_name,
+            order_id,
+            customer_id,
+            order_placed_at,
+            order_status,
+            total_amount_paid,
+            payment_finalized_date,
+            customer_first_name,
+            customer_last_name,
 
             -- Sales transaction sequence
-            row_number() over (order by paid_orders.order_id) as transaction_seq,
+            row_number() over (order by order_id) as transaction_seq,
 
             -- Customer sales sequence
             row_number() over (
-                partition by paid_orders.customer_id order by paid_orders.order_id
+                partition by customer_id order by order_id
             ) as customer_sales_seq,
 
             -- New vs returning customer
             case
-                when customer_orders.first_order_date = paid_orders.order_placed_at
+                when
+                    rank() over (
+                        partition by customer_id order by order_placed_at, order_id
+                    )
+                    = 1
                 then 'new'
                 else 'return'
             end as nvsr,
 
             -- Customer lifetime value
-            sum(paid_orders.total_amount_paid) over (
-                partition by paid_orders.customer_id
-                order by paid_orders.order_placed_at
+            sum(total_amount_paid) over (
+                partition by customer_id order by order_placed_at
             ) as customer_lifetime_value,
 
             -- First day of sale
-            customer_orders.first_order_date as fdos
+            first_value(order_placed_at) over (
+                partition by customer_id order by order_placed_at
+            ) as fdos
 
         from paid_orders
-        left join
-            customer_orders on paid_orders.customer_id = customer_orders.customer_id
         order by order_id
     )
 
